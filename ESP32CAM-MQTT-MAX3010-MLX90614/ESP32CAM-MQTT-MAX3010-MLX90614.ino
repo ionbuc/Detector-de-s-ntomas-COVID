@@ -30,6 +30,7 @@
 #include <Wire.h> // Biblioteca para comunicación I2C
 #include "MAX30105.h" // Biblioteca del sensor 
 #include "spo2_algorithm.h" // Biblioteca para interpretación de señales
+#include <Adafruit_MLX90614.h>
 
 //Datos de WiFi
 const char* ssid = "Totalplay-5F9E";  // Aquí debes poner el nombre de tu red
@@ -43,6 +44,7 @@ IPAddress server(192,168,100,106);
 WiFiClient espClient; // Este objeto maneja los datos de conexion WiFi
 PubSubClient client(espClient); // Este objeto maneja los datos de conexion al broker
 MAX30105 particleSensor; // Objeto para manejar el sensor MAX301000
+Adafruit_MLX90614 mlx = Adafruit_MLX90614();//Objeto para manejar los datos del sensor de temperatura MLX90614
 
 #define MAX_BRIGHTNESS 255 // Constante de brillo para el MAX30105
 
@@ -52,6 +54,7 @@ int ledPin2 = 4; // Para mostrar mensajes recibidos
 long timeNow, timeLastMQTT, timeLastMax30100; // Variables de control de tiempo no bloqueante
 int wait = 5000;  // Indica la espera cada 5 segundos para envío de mensajes MQTT
 int waitMax30100 = 4000; // Espera para lectua del sensor MAX30100
+int tir =0;
 
 
 #define MAX_BRIGHTNESS 255 // Constante de brillo para el MAX30105
@@ -81,6 +84,7 @@ void setup() {
   // Iniciar comunicación serial
   Serial.begin (115200);
   // Pines indicadores de conexion
+  
   pinMode (ledPin, OUTPUT);
   pinMode (ledPin2, OUTPUT);
   digitalWrite (ledPin, HIGH);
@@ -89,6 +93,7 @@ void setup() {
   //Pines Indicadores de funcionamiento del MAX30100
   //pinMode(pulseLED, OUTPUT);
   //pinMode(readLED, OUTPUT);
+  //Inicio de comunicación con el sensor
 
   Serial.println();
   Serial.println();
@@ -125,12 +130,14 @@ void setup() {
 
   // Initialize sensor
   Wire.begin (14,15);
-  if (!particleSensor.begin(Wire, I2C_SPEED_FAST)) //Use default I2C port, 400kHz speed
+  if (!particleSensor.begin(Wire)) //Use default I2C port, 400kHz speed
   {
     Serial.println(F("MAX30105 was not found. Please check wiring/power."));
     while (1);
   }
-
+//Inicio de comunicación con el sensor
+  mlx.begin();  
+   
   // Seccion que espera a que el paciente se coloque el sensor para realizar la lectura
   //Serial.println(F("Attach sensor to finger with rubber band. Press any key to start conversion"));
   //while (Serial.available() == 0) ; //wait until user presses a key
@@ -155,6 +162,7 @@ void setup() {
 
 // Cuerpo del programa, bucle principal
 void loop() {
+
   //Verificar siempre que haya conexión al broker
   if (!client.connected()) {
     reconnect();  // En caso de que no haya conexión, ejecutar la función de reconexión, definida despues del void setup ()
@@ -203,21 +211,24 @@ void loop() {
 
     //After gathering 25 new samples recalculate HR and SP02
     maxim_heart_rate_and_oxygen_saturation(irBuffer, bufferLength, redBuffer, &spo2, &validSPO2, &heartRate, &validHeartRate);
+
     
   }
-  
-  
+  tir=mlx.readObjectTempC();
+  Serial.print("*C\tObject = "); Serial.print(tir); Serial.println("*C");
   if (timeNow - timeLastMQTT > wait) { // Manda un mensaje por MQTT cada cinco segundos
     timeLastMQTT = timeNow; // Actualización de seguimiento de tiempo
 
     //Se construye el string correspondiente al JSON que contiene 3 variables
-    String json = "{\"hr\"=" + String (heartRate) + ",\"hrv\":" + String (validHeartRate) + ",\"spo2\":" + String (spo2) + ",\"spo2v\":"+ String (validSPO2) + "}";
+    String json = "{\"hr\"=" + String (heartRate) + ",\"hrv\":" + String (validHeartRate) + ",\"spo2\":" + String (spo2) + ",\"spo2v\":"+ String (validSPO2) + ",\"tir\"=" + String (tir) + "}";
     Serial.println(json); // Se imprime en monitor solo para poder visualizar que el string esta correctamente creado
     int str_len = json.length() + 1;//Se calcula la longitud del string
     char char_array[str_len];//Se crea un arreglo de caracteres de dicha longitud
     json.toCharArray(char_array, str_len);//Se convierte el string a char array    
     client.publish("codigoIoT/detectorSintomas/flow", char_array); // Esta es la función que envía los datos por MQTT, especifica el tema y el valor
   }// fin del if (timeNow - timeLast > wait)
+   //temperatura=mlx.readObjectTempC();
+  
 }// fin del void loop ()
 
 // Funciones de usuario
